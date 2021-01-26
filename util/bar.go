@@ -24,7 +24,7 @@ type Bar struct {
 	*uiprogress.Bar
 
 	reader io.Reader
-	read   uint64
+	readn  uint64
 }
 
 func (b *Bar) Read(p []byte) (n int, err error) {
@@ -36,7 +36,7 @@ func (b *Bar) Read(p []byte) (n int, err error) {
 		if err == uiprogress.ErrMaxCurrentReached {
 			_ = b.Set(b.Total)
 		}
-		atomic.AddUint64(&b.read, uint64(n))
+		atomic.AddUint64(&b.readn, uint64(n))
 	}
 
 	if err != nil {
@@ -60,7 +60,7 @@ func NewDownloadBar(url string, total int64, reader io.Reader) (bar *Bar) {
 		return url
 	}).AppendFunc(func(b *uiprogress.Bar) string {
 		if total == math.MaxInt64 {
-			return fmt.Sprintf("(%s / Unknown)", humanize.Bytes(atomic.LoadUint64(&bar.read)))
+			return fmt.Sprintf("(%s / Unknown)", humanize.Bytes(atomic.LoadUint64(&bar.readn)))
 		} else {
 			return fmt.Sprintf("%s (%s / %s)", b.CompletedPercentString(), humanize.Bytes(uint64(b.Current())), humanize.Bytes(uint64(b.Total)))
 		}
