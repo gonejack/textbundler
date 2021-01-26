@@ -4,7 +4,7 @@ Forked from https://github.com/zachlatta/textbundler
 
 # Installation
 ```shell
-> go get -u github.com/gonejack/textbundler
+> GO111MODULE=on go get -u github.com/gonejack/textbundler
 ```
 
 # Example
