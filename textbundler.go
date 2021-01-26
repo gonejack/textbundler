@@ -56,7 +56,7 @@ func (t *Textbundle) visitor(node *blackfriday.Node, entering bool) blackfriday.
 
 			var reader io.Reader = resp.Body
 			if t.verbose {
-				reader = io.TeeReader(resp.Body, util.NewDownloadBar(imageRef, resp.ContentLength))
+				reader = util.NewDownloadBar(imageRef, resp.ContentLength, resp.Body)
 			}
 
 			_, err = io.Copy(file, reader)

@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"github.com/dustin/go-humanize"
 	"github.com/gonejack/uiprogress"
+	"io"
+	"math"
+	"sync/atomic"
 	"time"
 )
 
@@ -18,40 +21,52 @@ func init() {
 
 type Bar struct {
 	*uiprogress.Progress
-	bar *uiprogress.Bar
+	*uiprogress.Bar
+
+	reader io.Reader
+	read   uint64
 }
 
-func (b *Bar) Write(p []byte) (int, error) {
-	n := len(p)
+func (b *Bar) Read(p []byte) (n int, err error) {
+	n, err = b.reader.Read(p)
 
-	if b.bar.Total == 1 {
-		b.bar.Incr()
-	} else {
-		_ = b.bar.Set(b.bar.Current() + int64(n))
+	if n > 0 {
+		next := b.Current() + int64(n)
+		err := b.Set(next)
+		if err == uiprogress.ErrMaxCurrentReached {
+			_ = b.Set(b.Total)
+		}
+		atomic.AddUint64(&b.read, uint64(n))
 	}
 
-	cur := b.bar.Current()
-	if cur > 0 && cur >= b.bar.Total {
+	if err != nil {
 		b.Stop()
 	}
 
-	return n, nil
+	return
 }
 
-func NewDownloadBar(url string, total int64) *Bar {
+func NewDownloadBar(url string, total int64, reader io.Reader) (bar *Bar) {
 	if total <= 0 {
-		total = 1
+		total = math.MaxInt64
 	}
 
-	pro := uiprogress.New()
-	bar := pro.AddBar(total)
-	bar.PrependFunc(func(b *uiprogress.Bar) string {
+	bar = new(Bar)
+	bar.reader = reader
+	bar.Progress = uiprogress.New()
+
+	bar.Bar = bar.Progress.AddBar(total)
+	bar.Bar.PrependFunc(func(b *uiprogress.Bar) string {
 		return url
 	}).AppendFunc(func(b *uiprogress.Bar) string {
-		return fmt.Sprintf("%s (%s / %s)", b.CompletedPercentString(), humanize.Bytes(uint64(b.Current())), humanize.Bytes(uint64(b.Total)))
+		if total == math.MaxInt64 {
+			return fmt.Sprintf("(%s / Unknown)", humanize.Bytes(atomic.LoadUint64(&bar.read)))
+		} else {
+			return fmt.Sprintf("%s (%s / %s)", b.CompletedPercentString(), humanize.Bytes(uint64(b.Current())), humanize.Bytes(uint64(b.Total)))
+		}
 	})
 
-	pro.Start()
+	bar.Progress.Start()
 
-	return &Bar{Progress: pro, bar: bar}
+	return
 }
