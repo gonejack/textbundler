@@ -23,9 +23,15 @@ type Bar struct {
 
 func (b *Bar) Write(p []byte) (int, error) {
 	n := len(p)
-	_ = b.bar.Set(b.bar.Current() + int64(n))
 
-	if b.bar.Current() >= b.bar.Total {
+	if b.bar.Total == 1 {
+		b.bar.Incr()
+	} else {
+		_ = b.bar.Set(b.bar.Current() + int64(n))
+	}
+
+	cur := b.bar.Current()
+	if cur > 0 && cur >= b.bar.Total {
 		b.Stop()
 	}
 
@@ -33,8 +39,11 @@ func (b *Bar) Write(p []byte) (int, error) {
 }
 
 func NewDownloadBar(url string, total int64) *Bar {
-	pro := uiprogress.New()
+	if total <= 0 {
+		total = 1
+	}
 
+	pro := uiprogress.New()
 	bar := pro.AddBar(total)
 	bar.PrependFunc(func(b *uiprogress.Bar) string {
 		return url
