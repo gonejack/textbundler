@@ -23,6 +23,7 @@ type Textbundle struct {
 
 	absMdPath          string
 	processAttachments bool
+	verbose            bool
 
 	imgReplacements        map[string]string
 	attachmentReplacements map[*blackfriday.LinkData]string
@@ -53,7 +54,12 @@ func (t *Textbundle) visitor(node *blackfriday.Node, entering bool) blackfriday.
 			}
 			defer resp.Body.Close()
 
-			_, err = io.Copy(file, resp.Body)
+			var reader io.Reader = resp.Body
+			if t.verbose {
+				reader = io.TeeReader(resp.Body, util.NewDownloadBar(imageRef, resp.ContentLength))
+			}
+
+			_, err = io.Copy(file, reader)
 			if err != nil {
 				log.Fatal("Error downloading image:", err)
 			}
@@ -89,13 +95,14 @@ func (t *Textbundle) visitor(node *blackfriday.Node, entering bool) blackfriday.
 
 // NewTextbundle creates a new Textbundle, initiating a temporary directory for
 // storing files during creation.
-func NewTextbundle(absMdPath string, processAttachments bool) (*Textbundle, error) {
+func NewTextbundle(absMdPath string, processAttachments, verbose bool) (*Textbundle, error) {
 	t := new(Textbundle)
 	t.imgReplacements = make(map[string]string)
 	t.attachmentReplacements = make(map[*blackfriday.LinkData]string)
 
 	t.absMdPath = absMdPath
 	t.processAttachments = processAttachments
+	t.verbose = verbose
 
 	var err error
 	t.tempDir, err = ioutil.TempDir("", "Textbundle")
@@ -112,8 +119,8 @@ func NewTextbundle(absMdPath string, processAttachments bool) (*Textbundle, erro
 }
 
 // GenerateBundle generates a Textbundle gives a Markdown file.
-func GenerateBundle(mdContents []byte, absMdPath string, creation, modification time.Time, dest string, processAttachments bool, toAppend string) error {
-	bundle, err := NewTextbundle(absMdPath, processAttachments)
+func GenerateBundle(mdContents []byte, absMdPath string, creation, modification time.Time, dest string, processAttachments, verbose bool, toAppend string) error {
+	bundle, err := NewTextbundle(absMdPath, processAttachments, verbose)
 	if err != nil {
 		return err
 	}

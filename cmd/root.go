@@ -13,7 +13,7 @@ import (
 	"github.com/zachlatta/textbundler/util"
 )
 
-var processAttachments, useGitDates bool
+var processAttachments, useGitDates, verbose bool
 var toAppend string
 
 func init() {
@@ -37,6 +37,13 @@ func init() {
 		"a",
 		"",
 		"Text to append to end of Markdown file. Use %f to template the original filename.",
+	)
+	RootCmd.PersistentFlags().BoolVarP(
+		&verbose,
+		"verbose",
+		"v",
+		false,
+		"Verbose",
 	)
 }
 
@@ -94,6 +101,9 @@ func process(mdPath string) error {
 		}
 	}
 
+	if verbose {
+		fmt.Printf("Process %s\n", mdPath)
+	}
 	err = Textbundler.GenerateBundle(
 		contents,
 		absMdPath,
@@ -101,6 +111,7 @@ func process(mdPath string) error {
 		change,
 		filepath.Dir(absMdPath)+"/",
 		processAttachments,
+		verbose,
 		strings.Replace(toAppend, `\n`, "\n", -1),
 	)
 	if err != nil {
