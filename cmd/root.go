@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gonejack/textbundler"
+	"github.com/gonejack/textbundler/util"
 	"github.com/spf13/cobra"
-	"github.com/zachlatta/textbundler"
-	"github.com/zachlatta/textbundler/util"
 )
 
 var processAttachments, useGitDates, verbose bool

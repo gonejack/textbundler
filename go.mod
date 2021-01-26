@@ -1,4 +1,4 @@
-module github.com/zachlatta/textbundler
+module github.com/gonejack/textbundler
 
 go 1.15
 

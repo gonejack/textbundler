@@ -1,6 +1,6 @@
 package main
 
-import "github.com/zachlatta/textbundler/cmd"
+import "github.com/gonejack/textbundler/cmd"
 
 func main() {
 	cmd.Execute()
