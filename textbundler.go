@@ -13,6 +13,7 @@ import (
 
 	"github.com/gonejack/textbundler/util"
 	"github.com/russross/blackfriday/v2"
+	"github.com/schollz/progressbar/v3"
 )
 
 // Textbundle represents a textbundle for transferring Markdown files between
@@ -54,12 +55,26 @@ func (t *Textbundle) visitor(node *blackfriday.Node, entering bool) blackfriday.
 			}
 			defer resp.Body.Close()
 
-			var reader io.Reader = resp.Body
 			if t.verbose {
-				reader = util.NewDownloadBar(imageRef, resp.ContentLength, resp.Body)
+				bar := progressbar.NewOptions64(resp.ContentLength,
+					progressbar.OptionEnableColorCodes(true),
+					progressbar.OptionSetTheme(progressbar.Theme{Saucer: "=", SaucerPadding: ".", BarStart: "|", BarEnd: "|"}),
+					progressbar.OptionSetWidth(10),
+					progressbar.OptionSpinnerType(11),
+					progressbar.OptionShowBytes(true),
+					progressbar.OptionShowCount(),
+					progressbar.OptionSetPredictTime(false),
+					progressbar.OptionSetDescription(imageRef),
+					progressbar.OptionSetRenderBlankState(true),
+					progressbar.OptionClearOnFinish(),
+				)
+				_ = bar.RenderBlank()
+				_, err = io.Copy(io.MultiWriter(file, bar), resp.Body)
+				_ = bar.Clear()
+			} else {
+				_, err = io.Copy(file, resp.Body)
 			}
 
-			_, err = io.Copy(file, reader)
 			if err != nil {
 				log.Fatal("Error downloading image:", err)
 			}
@@ -127,7 +142,6 @@ func GenerateBundle(mdContents []byte, absMdPath string, creation, modification 
 
 	processor := blackfriday.New()
 	rootNode := processor.Parse(mdContents)
-
 	rootNode.Walk(bundle.visitor)
 
 	output := string(mdContents)
