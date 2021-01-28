@@ -17,7 +17,7 @@ func GetFilename(ref string) (name string) {
 	u, err := url.ParseRequestURI(ref)
 	if err == nil {
 		name = filepath.Base(u.Path)
-		if name == "" {
+		if name == "" || name == "/" {
 			name = "file"
 		}
 		if len(name) <= 4 {
