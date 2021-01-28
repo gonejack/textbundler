@@ -17,8 +17,11 @@ func GetFilename(ref string) (name string) {
 	u, err := url.ParseRequestURI(ref)
 	if err == nil {
 		name = filepath.Base(u.Path)
-		if len(name) < 4 {
-			name = fmt.Sprintf("%s.%d", name, time.Now().UnixNano())
+		if name == "" {
+			name = "file"
+		}
+		if len(name) <= 4 {
+			name = fmt.Sprintf("%s-%d", name, time.Now().UnixNano())
 		}
 	} else {
 		name = filepath.Base(ref)
