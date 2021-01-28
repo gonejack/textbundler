@@ -2,6 +2,7 @@ package util
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"os/exec"
 	"path/filepath"
@@ -12,13 +13,18 @@ import (
 )
 
 // GetFilename attempts to parse the given url or local path for filename
-func GetFilename(ref string) string {
+func GetFilename(ref string) (name string) {
 	u, err := url.ParseRequestURI(ref)
 	if err == nil {
-		return filepath.Base(u.Path)
+		name = filepath.Base(u.Path)
+		if len(name) < 4 {
+			name = fmt.Sprintf("%s.%d", name, time.Now().UnixNano())
+		}
 	} else {
-		return filepath.Base(ref)
+		name = filepath.Base(ref)
 	}
+
+	return
 }
 
 // IsValidURL attempts to parse the given text as a URL, returning true on
