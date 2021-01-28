@@ -11,6 +11,16 @@ import (
 	"github.com/djherbis/times"
 )
 
+// GetFilename attempts to parse the given url or local path for filename
+func GetFilename(ref string) string {
+	u, err := url.ParseRequestURI(ref)
+	if err == nil {
+		return filepath.Base(u.Path)
+	} else {
+		return filepath.Base(ref)
+	}
+}
+
 // IsValidURL attempts to parse the given text as a URL, returning true on
 // success and false on failure.
 func IsValidURL(toTest string) bool {

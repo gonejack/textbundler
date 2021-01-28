@@ -40,7 +40,7 @@ func (t *Textbundle) visitor(node *blackfriday.Node, entering bool) blackfriday.
 		ld := node.LinkData
 		imageRef := string(ld.Destination)
 
-		filename := filepath.Base(imageRef)
+		filename := util.GetFilename(imageRef)
 
 		file, err := t.newAsset(filename)
 		if err != nil {
@@ -57,7 +57,6 @@ func (t *Textbundle) visitor(node *blackfriday.Node, entering bool) blackfriday.
 
 			if t.verbose {
 				bar := progressbar.NewOptions64(resp.ContentLength,
-					progressbar.OptionEnableColorCodes(true),
 					progressbar.OptionSetTheme(progressbar.Theme{Saucer: "=", SaucerPadding: ".", BarStart: "|", BarEnd: "|"}),
 					progressbar.OptionSetWidth(10),
 					progressbar.OptionSpinnerType(11),
