@@ -13,42 +13,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var processAttachments, useGitDates, verbose bool
-var toAppend string
+var (
+	processAttachments bool
+	useGitDates        bool
+	toAppend           string
+	concurrent         int
+	verbose            bool
+)
 
-func init() {
-	RootCmd.PersistentFlags().BoolVarP(
-		&processAttachments,
-		"process-attachments",
-		"p",
-		false,
-		"Replace links to local files with Bear-compatible tags to ease processing",
-	)
-	RootCmd.PersistentFlags().BoolVarP(
-		&useGitDates,
-		"git-dates",
-		"g",
-		false,
-		"Instead of using OS creation / modification dates of Markdown file, use the dates from git commit history (must be in a git repo & have git CLI)",
-	)
-	RootCmd.PersistentFlags().StringVarP(
-		&toAppend,
-		"append",
-		"a",
-		"",
-		"Text to append to end of Markdown file. Use %f to template the original filename.",
-	)
-	RootCmd.PersistentFlags().BoolVarP(
-		&verbose,
-		"verbose",
-		"v",
-		false,
-		"Verbose",
-	)
-}
-
-// RootCmd handles the base case for textbundler: processing Markdown files.
-var RootCmd = &cobra.Command{
+// cmd handles the base case for textbundler: processing Markdown files.
+var cmd = &cobra.Command{
 	Use:   "textbundler [file] [file2] [file3]...",
 	Short: "Convert markdown files into textbundles",
 	Run: func(md *cobra.Command, args []string) {
@@ -64,6 +38,45 @@ var RootCmd = &cobra.Command{
 			}
 		}
 	},
+}
+
+func init() {
+	cmd.Flags().SortFlags = false
+	cmd.PersistentFlags().BoolVarP(
+		&processAttachments,
+		"process-attachments",
+		"p",
+		false,
+		"Replace links to local files with Bear-compatible tags to ease processing",
+	)
+	cmd.PersistentFlags().BoolVarP(
+		&useGitDates,
+		"git-dates",
+		"g",
+		false,
+		"Instead of using OS creation / modification dates of Markdown file, use the dates from git commit history (must be in a git repo & have git CLI)",
+	)
+	cmd.PersistentFlags().StringVarP(
+		&toAppend,
+		"append",
+		"a",
+		"",
+		"Text to append to end of Markdown file. Use %f to template the original filename.",
+	)
+	cmd.PersistentFlags().IntVarP(
+		&concurrent,
+		"concurrent",
+		"c",
+		5,
+		"Max concurrent image downloads",
+	)
+	cmd.PersistentFlags().BoolVarP(
+		&verbose,
+		"verbose",
+		"v",
+		false,
+		"Verbose",
+	)
 }
 
 func process(mdPath string) error {
@@ -105,14 +118,17 @@ func process(mdPath string) error {
 		fmt.Printf("Process %s\n", mdPath)
 	}
 	err = Textbundler.GenerateBundle(
-		contents,
-		absMdPath,
-		creation,
-		change,
-		filepath.Dir(absMdPath)+"/",
-		processAttachments,
-		verbose,
-		strings.Replace(toAppend, `\n`, "\n", -1),
+		Textbundler.Config{
+			MdContents:         contents,
+			AbsMdPath:          absMdPath,
+			Creation:           creation,
+			Modification:       change,
+			Dest:               filepath.Dir(absMdPath) + "/",
+			ProcessAttachments: processAttachments,
+			ToAppend:           strings.Replace(toAppend, `\n`, "\n", -1),
+			Verbose:            verbose,
+			Concurrent:         concurrent,
+		},
 	)
 	if err != nil {
 		return err
@@ -123,7 +139,7 @@ func process(mdPath string) error {
 
 // Execute begins the CLI processing flow
 func Execute() {
-	if err := RootCmd.Execute(); err != nil {
+	if err := cmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

@@ -1,6 +1,7 @@
 package Textbundler
 
 import (
+	"context"
 	"io"
 	"io/ioutil"
 	"log"
@@ -9,11 +10,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gonejack/textbundler/util"
 	"github.com/russross/blackfriday/v2"
 	"github.com/schollz/progressbar/v3"
+	"golang.org/x/sync/semaphore"
 )
 
 // Textbundle represents a textbundle for transferring Markdown files between
@@ -26,6 +29,9 @@ type Textbundle struct {
 	processAttachments bool
 	verbose            bool
 
+	concurrent    *semaphore.Weighted
+	downloadGroup sync.WaitGroup
+
 	imgReplacements        map[string]string
 	attachmentReplacements map[*blackfriday.LinkData]string
 }
@@ -33,6 +39,35 @@ type Textbundle struct {
 func (t *Textbundle) newAsset(filename string) (*os.File, error) {
 	path := filepath.Join(t.assetsDir, filename)
 	return os.Create(path)
+}
+
+func (t *Textbundle) download(file *os.File, imageRef string) {
+	resp, err := http.Get(imageRef)
+	if err != nil {
+		log.Fatal("Error downloading image:", err)
+	}
+	defer resp.Body.Close()
+
+	if t.verbose {
+		bar := progressbar.NewOptions64(resp.ContentLength,
+			progressbar.OptionSetTheme(progressbar.Theme{Saucer: "=", SaucerPadding: ".", BarStart: "|", BarEnd: "|"}),
+			progressbar.OptionSetWidth(10),
+			progressbar.OptionSpinnerType(11),
+			progressbar.OptionShowBytes(true),
+			progressbar.OptionShowCount(),
+			progressbar.OptionSetPredictTime(false),
+			progressbar.OptionSetDescription(imageRef),
+			progressbar.OptionSetRenderBlankState(true),
+			progressbar.OptionClearOnFinish(),
+		)
+		_, err = io.Copy(io.MultiWriter(file, bar), resp.Body)
+	} else {
+		_, err = io.Copy(file, resp.Body)
+	}
+
+	if err != nil {
+		log.Fatal("Error downloading image:", err)
+	}
 }
 
 func (t *Textbundle) visitor(node *blackfriday.Node, entering bool) blackfriday.WalkStatus {
@@ -46,38 +81,21 @@ func (t *Textbundle) visitor(node *blackfriday.Node, entering bool) blackfriday.
 		if err != nil {
 			log.Fatal("Error creating asset file:", err)
 		}
-		defer file.Close()
 
 		if util.IsValidURL(imageRef) {
-			resp, err := http.Get(imageRef)
-			if err != nil {
-				log.Fatal("Error downloading image:", err)
-			}
-			defer resp.Body.Close()
+			t.downloadGroup.Add(1)
+			t.concurrent.Acquire(context.TODO(), 1)
 
-			if t.verbose {
-				bar := progressbar.NewOptions64(resp.ContentLength,
-					progressbar.OptionSetTheme(progressbar.Theme{Saucer: "=", SaucerPadding: ".", BarStart: "|", BarEnd: "|"}),
-					progressbar.OptionSetWidth(10),
-					progressbar.OptionSpinnerType(11),
-					progressbar.OptionShowBytes(true),
-					progressbar.OptionShowCount(),
-					progressbar.OptionSetPredictTime(false),
-					progressbar.OptionSetDescription(imageRef),
-					progressbar.OptionSetRenderBlankState(true),
-					progressbar.OptionClearOnFinish(),
-				)
-				_ = bar.RenderBlank()
-				_, err = io.Copy(io.MultiWriter(file, bar), resp.Body)
-				_ = bar.Clear()
-			} else {
-				_, err = io.Copy(file, resp.Body)
-			}
+			go func() {
+				defer file.Close()
+				defer t.downloadGroup.Done()
+				defer t.concurrent.Release(1)
 
-			if err != nil {
-				log.Fatal("Error downloading image:", err)
-			}
+				t.download(file, imageRef)
+			}()
 		} else {
+			defer file.Close()
+
 			absImagePath := filepath.Join(filepath.Dir(t.absMdPath), imageRef)
 			localImg, err := os.Open(absImagePath)
 			if err != nil {
@@ -109,7 +127,7 @@ func (t *Textbundle) visitor(node *blackfriday.Node, entering bool) blackfriday.
 
 // NewTextbundle creates a new Textbundle, initiating a temporary directory for
 // storing files during creation.
-func NewTextbundle(absMdPath string, processAttachments, verbose bool) (*Textbundle, error) {
+func NewTextbundle(absMdPath string, processAttachments bool, concurrent int, verbose bool) (*Textbundle, error) {
 	t := new(Textbundle)
 	t.imgReplacements = make(map[string]string)
 	t.attachmentReplacements = make(map[*blackfriday.LinkData]string)
@@ -117,6 +135,7 @@ func NewTextbundle(absMdPath string, processAttachments, verbose bool) (*Textbun
 	t.absMdPath = absMdPath
 	t.processAttachments = processAttachments
 	t.verbose = verbose
+	t.concurrent = semaphore.NewWeighted(int64(concurrent))
 
 	var err error
 	t.tempDir, err = ioutil.TempDir("", "Textbundle")
@@ -132,18 +151,32 @@ func NewTextbundle(absMdPath string, processAttachments, verbose bool) (*Textbun
 	return t, nil
 }
 
+type Config struct {
+	MdContents         []byte
+	AbsMdPath          string
+	Creation           time.Time
+	Modification       time.Time
+	Dest               string
+	ProcessAttachments bool
+	ToAppend           string
+	Concurrent         int
+	Verbose            bool
+}
+
 // GenerateBundle generates a Textbundle gives a Markdown file.
-func GenerateBundle(mdContents []byte, absMdPath string, creation, modification time.Time, dest string, processAttachments, verbose bool, toAppend string) error {
-	bundle, err := NewTextbundle(absMdPath, processAttachments, verbose)
+func GenerateBundle(c Config) error {
+	bundle, err := NewTextbundle(c.AbsMdPath, c.ProcessAttachments, c.Concurrent, c.Verbose)
 	if err != nil {
 		return err
 	}
 
 	processor := blackfriday.New()
-	rootNode := processor.Parse(mdContents)
+	rootNode := processor.Parse(c.MdContents)
 	rootNode.Walk(bundle.visitor)
 
-	output := string(mdContents)
+	bundle.downloadGroup.Wait()
+
+	output := string(c.MdContents)
 
 	for orig, replacement := range bundle.imgReplacements {
 		output = strings.Replace(output, orig, replacement, -1)
@@ -158,9 +191,9 @@ func GenerateBundle(mdContents []byte, absMdPath string, creation, modification 
 		output = regex.ReplaceAllLiteralString(output, replacement)
 	}
 
-	if toAppend != "" {
-		filename := filepath.Base(absMdPath)
-		toAppendProcessed := strings.Replace(toAppend, `%f`, filename, -1)
+	if c.ToAppend != "" {
+		filename := filepath.Base(c.AbsMdPath)
+		toAppendProcessed := strings.Replace(c.ToAppend, `%f`, filename, -1)
 		output = output + "\n" + toAppendProcessed + "\n"
 	}
 
@@ -182,23 +215,23 @@ func GenerateBundle(mdContents []byte, absMdPath string, creation, modification 
 	}
 
 	// Set creation and change time of the bundle so Bear knows when to mark the file as created / changed
-	err = util.SetBirthTime(bundle.tempDir, creation)
+	err = util.SetBirthTime(bundle.tempDir, c.Creation)
 	if err != nil {
 		return err
 	}
-	err = util.SetModTime(bundle.tempDir, modification)
+	err = util.SetModTime(bundle.tempDir, c.Modification)
 	if err != nil {
 		return err
 	}
 
-	if filepath.Clean(dest) == filepath.Dir(dest) {
-		filename := filepath.Base(absMdPath)
-		err := os.Rename(bundle.tempDir, filepath.Join(dest, filename+".Textbundle"))
+	if filepath.Clean(c.Dest) == filepath.Dir(c.Dest) {
+		filename := filepath.Base(c.AbsMdPath)
+		err := os.Rename(bundle.tempDir, filepath.Join(c.Dest, filename+".Textbundle"))
 		if err != nil {
 			return err
 		}
 	} else {
-		err := os.Rename(bundle.tempDir, dest)
+		err := os.Rename(bundle.tempDir, c.Dest)
 		if err != nil {
 			return err
 		}
