@@ -42,6 +42,7 @@ var cmd = &cobra.Command{
 
 func init() {
 	cmd.Flags().SortFlags = false
+	cmd.PersistentFlags().SortFlags = false
 	cmd.PersistentFlags().BoolVarP(
 		&processAttachments,
 		"process-attachments",
